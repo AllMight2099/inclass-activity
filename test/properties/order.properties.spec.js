@@ -83,4 +83,18 @@ describe('Property-Based Tests for Orders', () => {
     // });
 
   });
+
+  describe('Invariants', () => {
+    it('tax is zero for all-frozen orders', () => {
+      const allFrozen = orderArb.filter(o => o.items.every(it => it.kind === 'frozen'));
+      fc.assert(
+        fc.property(allFrozen, (order) => {
+          const t = tax(order);
+          assert.strictEqual(t, 0);
+        }),
+        { numRuns: 200 }
+      );
+    });
+
+  });
 });
