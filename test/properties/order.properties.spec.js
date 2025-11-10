@@ -21,11 +21,19 @@ const zoneArb = fc.constantFrom('local', 'outer');
 // Each field in the object below specifies the arbitrary generator to use for that field
 //
 // To learn more about composite arbitraries: https://fast-check.dev/docs/core-blocks/arbitraries/composites
+
+const deliveryArb = fc.record({
+  distanceKm: fc.float({ min: 0, max: 100 }),
+  zone: zoneArb,
+  rush: fc.boolean()
+});
+
+const couponArb = fc.option(fc.constantFrom('PIEROGI-BOGO', 'FIRST10'), { nil: null });
+
 const orderItemArb = fc.record({
-  // e.g., this will use the kindArb to generate a value for the 'kind' field
   kind: kindArb,
   sku: skuArb,
-  title: fc.string(),
+  title: fc.string({ minLength: 0, maxLength: 24 }),
   filling: fillingArb,
   qty: fc.constantFrom(6, 12, 24),
   unitPriceCents: fc.integer({ min: 500, max: 3000 }),
@@ -34,8 +42,11 @@ const orderItemArb = fc.record({
 
 // We use the orderItemArb defined above to build an order object that contains an array of order items
 const orderArb = fc.record({
-  // we specify the maximum and minimum length of the items array here
-  items: fc.array(orderItemArb, { minLength: 1, maxLength: 5 })
+  id: fc.uuid(),
+  items: fc.array(orderItemArb, { minLength: 1, maxLength: 5 }),
+  delivery: fc.option(deliveryArb, { nil: { distanceKm: 1, zone: 'local', rush: false } }),
+  customer: fc.record({ tier: tierArb }, { requiredKeys: ['tier'] }),
+  coupon: couponArb
 });
 
 
@@ -53,35 +64,37 @@ const orderArb = fc.record({
 
 
 describe('Property-Based Tests for Orders', () => {
-  describe('Invariants', () => {
-    
-    // Here's an example preservation property!
-    it('subtotal should always be non-negative integer', () => {
-      fc.assert(
-        fc.property(orderArb, (order) => {
-          const result = subtotal(order);
-          return result >= 0 && Number.isInteger(result);
-        }),
-        { numRuns: 50 }
-      );
-    });
+  it('subtotal should always be a non-negative integer', () => {
+    fc.assert(
+      fc.property(orderArb, (order) => {
+        const result = subtotal(order);
+        return Number.isInteger(result) && result >= 0;
+      }),
+      { numRuns: 50 }
+    );
+  });
 
-    // ---------------------------------------------------------------------------
-    // Add more invariant properties for discounts, tax, delivery, and total here
-    // You can adapt the starter code below.
-    // Feel free to copy, paste, and modify as needed multiple times.
-    // ---------------------------------------------------------------------------
-    //
-    // it('subtotal should always be non-negative integer', () => {
-    //   fc.assert(
-    //     fc.property(, (order) => { // add the appropriate arbitraries here
-    //       const result = subtotal(order); // change this to the function you are testing
-    //       return result >= 0 && Number.isInteger(result); // add the property you want to verify
-    //     }),
-    //     { numRuns: 50 } // you can adjust the number of runs as needed
-    //   );
-    // });
+  it('total equals subtotal - discounts + delivery + tax (clamped at zero)', () => {
+    fc.assert(
+      fc.property(orderArb, (order) => {
+        const s = subtotal(order);
+        const d = discounts(order); // adapt if discounts returns an object
+        const del = delivery(order); // adapt if delivery returns an object
+        const t = tax(order);
+        const tot = total(order);
 
+        assert.ok(Number.isInteger(s), 'subtotal must be integer cents');
+        assert.ok(Number.isInteger(d), 'discounts must be integer cents');
+        assert.ok(Number.isInteger(del), 'delivery must be integer cents');
+        assert.ok(Number.isInteger(t), 'tax must be integer cents');
+        assert.ok(Number.isInteger(tot), 'total must be integer cents');
+
+        const expected = Math.max(0, s - d + del + t);
+        assert.strictEqual(tot, expected);
+        return true;
+      }),
+      { numRuns: 500 }
+    );
   });
 
   describe('Invariants', () => {
@@ -91,6 +104,32 @@ describe('Property-Based Tests for Orders', () => {
         fc.property(allFrozen, (order) => {
           const t = tax(order);
           assert.strictEqual(t, 0);
+        }),
+        { numRuns: 200 }
+      );
+    });
+
+    it('discounts should never exceed subtotal', () => {
+      fc.assert(
+        fc.property(orderArb, (order) => {
+          const s = subtotal(order);
+          const d = discounts(order);
+          
+          assert.ok(d >= 0, 'discounts must be non-negative');
+          assert.ok(d <= s, `discounts (${d}) should not exceed subtotal (${s})`);
+          return true;
+        }),
+        { numRuns: 300 }
+      );
+    });
+
+    it('orders with only hot items should have positive tax', () => {
+      const allHot = orderArb.filter(o => o.items.every(it => it.kind === 'hot'));
+      fc.assert(
+        fc.property(allHot, (order) => {
+          const t = tax(order);
+          assert.ok(t > 0, `tax should be positive for hot items, got ${t}`);
+          return true;
         }),
         { numRuns: 200 }
       );

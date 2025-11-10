@@ -2,11 +2,15 @@
  * Calculate delivery fee
  * 
  * @param {Object} order - The order object
- * @param {Object} delivery - Delivery information with zone and rush properties
- * @param {Object} profile - Customer profile with tier property
+ * @param {Object} delivery - Delivery information with zone and rush properties (optional if order.delivery exists)
+ * @param {Object} profile - Customer profile with tier property (optional if order.customer exists)
  * @returns {number} - Delivery fee in cents
  */
 function deliveryFee(order, delivery, profile) {
+  // Extract delivery and customer from order if not provided separately
+  const deliveryInfo = delivery || order.delivery || { zone: 'local', rush: false, distanceKm: 1 };
+  const customer = profile || order.customer || { tier: 'guest' };
+  
   // Calculate discounted subtotal for free delivery threshold
   let discountedSubtotal = 0;
   for (const item of order.items) {
@@ -21,7 +25,7 @@ function deliveryFee(order, delivery, profile) {
   };
 
   // Fetch discounts based on customer's tier
-  const tierDiscounts = volumeDiscounts[profile.tier] || volumeDiscounts['guest'];
+  const tierDiscounts = volumeDiscounts[customer.tier] || volumeDiscounts['guest'];
   let totalVolumeDiscount = 0;
 
   for (const item of order.items) {
@@ -42,13 +46,13 @@ function deliveryFee(order, delivery, profile) {
   };
 
   // Use tier-specific threshold, default to guest if tier not recognized
-  let threshold = freeDeliveryThresholds[profile.tier];
+  let threshold = freeDeliveryThresholds[customer.tier];
   if (!threshold) {
     threshold = freeDeliveryThresholds['guest'];
   }
 
   if (discountedSubtotal > threshold) {
-    if (delivery.rush) {
+    if (deliveryInfo.rush) {
       return 299;
     }
     return 0;
@@ -58,18 +62,18 @@ function deliveryFee(order, delivery, profile) {
   let fee = 0;
 
   for (const item of order.items) {
-    if (delivery.zone === 'local') {
+    if (deliveryInfo.zone === 'local') {
       fee += 399;
-    } else if (delivery.zone === 'outer') {
+    } else if (deliveryInfo.zone === 'outer') {
       fee += 699;
     }
   }
 
-  if (delivery.rush) {
+  if (deliveryInfo.rush) {
     fee += 299;
   }
 
   return fee;
 }
 
-module.exports = { deliveryFee };
+module.exports = { deliveryFee, delivery: deliveryFee };

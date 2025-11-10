@@ -38,11 +38,15 @@ const { tax } = require('./tax');
  * - FIRST10: 10% off orders $20 or more
  * 
  * @param {Object} order - The order object with items array
- * @param {Object} context - Context containing profile, delivery, and optional coupon
+ * @param {Object} context - Context containing profile, delivery, and optional coupon (optional if order has these properties)
  * @returns {number} - Total cost in cents
  */
 function total(order, context) {
-  const { profile, delivery, coupon = null } = context;
+  // Extract context from order if not provided separately
+  const ctx = context || {};
+  const profile = ctx.profile || order.customer || { tier: 'guest' };
+  const delivery = ctx.delivery || order.delivery || { zone: 'local', rush: false, distanceKm: 1 };
+  const coupon = ctx.coupon !== undefined ? ctx.coupon : (order.coupon || null);
   
   const orderSubtotal = subtotal(order);
   const orderDiscounts = discounts(order, profile, coupon);
@@ -50,17 +54,9 @@ function total(order, context) {
   const orderTax = tax(order, delivery);
   let orderTotal = orderSubtotal - orderDiscounts + orderDelivery + orderTax;
   
-  if (delivery.rush) {
-    orderTotal += 299;
-  }
+  // Note: Rush fee is already included in deliveryFee calculation
   
-  if (orderTotal > 10000) {
-    const formatted = (orderTotal / 100).toFixed(2);
-    orderTotal = formatted + "00";
-    orderTotal = parseInt(orderTotal);
-  }
-  
-  return orderTotal;
+  return Math.max(0, orderTotal);
 }
 
 module.exports = { total };

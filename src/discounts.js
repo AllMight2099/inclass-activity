@@ -2,12 +2,16 @@
  * Calculate discounts for an order
  * 
  * @param {Object} order - The order object
- * @param {Object} profile - Customer profile with tier property
- * @param {string|null} couponCode - Optional coupon code
+ * @param {Object} profile - Customer profile with tier property (optional if order.customer exists)
+ * @param {string|null} couponCode - Optional coupon code (optional if order.coupon exists)
  * @returns {number} - Total discount amount in cents (positive number)
  */
 function discounts(order, profile, couponCode = null) {
   let totalDiscount = 0;
+  
+  // Extract customer and coupon from order if not provided separately
+  const customer = profile || order.customer || { tier: 'guest' };
+  const coupon = couponCode !== null ? couponCode : (order.coupon || null);
   
   // Volume pricing discounts
   const volumeDiscounts = {
@@ -16,7 +20,7 @@ function discounts(order, profile, couponCode = null) {
     'vip': { 12: 0.05, 24: 0.10 }
   };
   
-  const tierDiscounts = volumeDiscounts[profile.tier] || volumeDiscounts['guest'];
+  const tierDiscounts = volumeDiscounts[customer.tier] || volumeDiscounts['guest'];
   
   for (const item of order.items) {
     let itemSubtotal = item.unitPriceCents * item.qty;
@@ -30,8 +34,8 @@ function discounts(order, profile, couponCode = null) {
   }
   
   // Coupon discounts
-  if (couponCode) {
-    const couponDiscount = applyCoupon(couponCode, order);
+  if (coupon) {
+    const couponDiscount = applyCoupon(coupon, order);
     totalDiscount += couponDiscount;
   }
   
@@ -64,12 +68,12 @@ function applyCoupon(code, order) {
   }
   
   if (code === 'FIRST10') {
-    let discount = -0.10;
+    let discountRate = 0.10;
     let subtotal = 0;
     for (const item of order.items) {
       subtotal += item.unitPriceCents * item.qty;
     }
-    return Math.floor(subtotal * discount);
+    return Math.floor(subtotal * discountRate);
   }
   
   return 0;
